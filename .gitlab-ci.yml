@@ -1,0 +1,27 @@
+cache:
+  paths:
+    - node_modules/
+
+stages:
+  - build
+  - deploy
+
+build:
+  image: node
+  stage: build
+  script:
+    - yarn install
+    - yarn build
+  artifacts:
+    paths:
+      - "build/"
+  only:
+    - master
+
+pages:
+  stage: deploy
+  script: 
+    - mv build/ public/
+  artifacts: 
+    paths:
+      - "public/"

@@ -1,0 +1,56 @@
+{
+  // 配置ts编译器的选项,控制如何编译代码
+  "compilerOptions": {
+    // 指定编译后的js版本
+    "target": "es5", 
+    // 引入运行时环境支持的库类型
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    // 允许编译js文件
+    "allowJs": true, 
+    // 跳过第三方库类型检查
+    // ts会检查所有依赖项的类型声明文件,如果项目依赖了很多外部库,开启此选项可以提高编译速度
+    "skipLibCheck": true, 
+    // 解决 CommonJs与EsModule兼容性问题
+    // 支持在编译时像导入esModule一样导入CommonJs模块
+    "esModuleInterop": true, 
+    // 允许从没有默认导出的模块中默认导入
+    "allowSyntheticDefaultImports": true,
+    // 启用严格类型检查
+    // 默认开启以下几个重要的检查项
+    // noImplicitAny 防止隐式any类型
+    // strictNullChecks 确保严格区分null与undefined
+    // strictFunctionTypes 确保函数类型的严格匹配
+    "strict": true, 
+    // 确保文件名的大小写一致,避免在不同操作系统上出现不同行为
+    "forceConsistentCasingInFileNames": true,
+    // 确保switch中的每个case都通过break跳出了
+    "noFallthroughCasesInSwitch": true,
+    // 定义模块系统类型 需与moduleResolution配合使用
+    // 使用es模块化语法
+    "module": "esnext", 
+    // 选择模块解析策略
+    // 配置值为node 表示用于node.js的模块解析
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    // 是否将每个文件作为单独的模块
+    "isolatedModules": true,
+    // 不生成编译文件
+    "noEmit": true,
+    // 支持react-jsx
+    "jsx": "react-jsx", 
+    "baseUrl": ".",
+    // "paths" : {
+    //   "@/*": ["./src/*"]
+    // }
+  },
+  // 指定哪些文件应包含在编译中
+  "include": [
+    "src"
+  ]
+  // exclude 指定哪些文件应从编译中排除
+  // files 显式列出需要编译的文件
+}
