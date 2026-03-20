@@ -129,6 +129,7 @@ class MyPromise {
   }
 
   finally = (onFinally: Function) => {
+    if (!isFunction(onFinally)) return this.then(onFinally, onFinally);
     return this.then(
         (value: any) => {
           return MyPromise.resolve(onFinally())
@@ -164,7 +165,7 @@ class MyPromise {
 
   static all = (promises: any) => {
     return new MyPromise((resolve, reject) => {
-      if (typeof promises[Symbol.iterator] !== 'function') {
+      if (!isFunction(promises[Symbol.iterator])) {
         reject(new TypeError(`${typeof promises} is not iterable`));
         return;
       }
@@ -173,11 +174,13 @@ class MyPromise {
         return;
       }
       const result: any = [];
+      let resolvedCount = 0;
       promises.forEach((p: any, index: number) => {
         MyPromise.resolve(p)
           .then((value: any) => {
             result[index] = value;
-            if (result.length === promises.length) resolve(result);
+            resolvedCount++;
+            if (resolvedCount === promises.length) resolve(result);
           })
           .catch((error: any) => reject(error));
       })
@@ -186,13 +189,13 @@ class MyPromise {
 
   static race = (promises: any) => {
     return new MyPromise((resolve, reject) => {
-      if (typeof promises[Symbol.iterator] !== 'function') {
+      if (!isFunction(promises[Symbol.iterator])) {
         reject(new TypeError(`${typeof promises} is not iterable`));
         return;
       }
       if (promises.length === 0) return;
       promises.forEach((p: any) => {
-        return MyPromise.resolve(p)
+        MyPromise.resolve(p)
           .then((value: any) => resolve(value))
           .catch((error: any) => reject(error));
       })
@@ -201,7 +204,7 @@ class MyPromise {
 
   static allSettled = (promises: any) => {
     return new MyPromise((resolve, reject) => {
-      if (typeof promises[Symbol.iterator] !== 'function') {
+      if (!isFunction(promises[Symbol.iterator])) {
         reject(new TypeError(`${typeof promises} is not iterable`));
         return;
       }
@@ -210,21 +213,24 @@ class MyPromise {
         return;
       }
       const result: any = [];
+      let completedCount = 0;
       promises.forEach((p: any, index: number) => {
-        return MyPromise.resolve(p)
+        MyPromise.resolve(p)
           .then((value: any) => {
             result[index] = {
               status: STATE.FULFILLED,
               value,
             }
-            if (result.length === promises.length) resolve(result)
+            completedCount++;
+            if (completedCount === promises.length) resolve(result);
           })
           .catch((error: any) => {
             result[index] = {
               status: STATE.REJECTED,
               reason: error,
             }
-            if (result.length === promises.length) resolve(result)
+            completedCount++;
+            if (completedCount === promises.length) resolve(result);
           })
       })
     })
@@ -232,7 +238,7 @@ class MyPromise {
 
   static any = (promises: any) => {
     return new MyPromise((resolve, reject) => {
-      if (typeof promises[Symbol.iterator] !== 'function') {
+      if (!isFunction(promises[Symbol.iterator])) {
         reject(new TypeError(`${typeof promises} is not iterable`));
         return;
       }
@@ -241,12 +247,14 @@ class MyPromise {
         return;
       }
       const result: any = [];
+      let rejectedCount = 0;
       promises.forEach((p: any, index: number) => {
         MyPromise.resolve(p)
           .then((value: any) => resolve(value))
           .catch((error: any) => {
             result[index] = error;
-            if (result.length === promises.length) {
+            rejectedCount++;
+            if (rejectedCount === promises.length) {
               reject(new AggregateError(result, 'All promises were rejected'));
             }
           })
