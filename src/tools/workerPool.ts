@@ -108,7 +108,7 @@ class WorkerPool {
 
   // 循环关闭web worker
   terminate = () => {
-    this.pool.forEach(workerWrapper => workerWrapper.terminate());
+    this.pool.forEach(item => item.terminate());
   }
 }
 

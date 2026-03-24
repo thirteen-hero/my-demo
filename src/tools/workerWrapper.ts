@@ -8,9 +8,6 @@ interface WorkerParams {
   index: number;
 }
 
-type Resolve<T = any> = (value: T | PromiseLike<T>) => void;
-type Reject = (reason?: any) => void;
-
 // web worker交互容器
 // 接收具体业务组件获取数据的请求方法和接收数据的回调
 class WorkerWrapper {
@@ -18,44 +15,32 @@ class WorkerWrapper {
   worker: Worker;
   // 当前线程的状态 等待｜运行中
   status: STATUS;
-  // 获取数据的回调
-  getData: (
-    worker: Worker, 
-    resolve: Resolve, 
-    reject: Reject
-  ) => void;
-  // 接收数据的回调
-  postData: (worker: Worker, params: WorkerParams) => void;
 
   constructor(
     worker: Worker, 
-    getData: (
-      worker: Worker, 
-      resolve: Resolve, 
-      reject: Reject,
-    ) => void,
-    postData: (
-      worker: Worker, 
-      params: WorkerParams) => void,
   ) {
     this.worker = worker;
     this.status = STATUS.WAITING;
-    this.getData = getData.bind(null);
-    this.postData = postData.bind(null);
   }
 
   // 运行当前web worker
   run = (params: WorkerParams) => {
     this.status = STATUS.RUNNING;
-
-    const onMessage = (resolve: Resolve, reject: Reject) => {
-      this.getData(this.worker, resolve, reject);
-      this.status = STATUS.WAITING;
-    }
-
     return new Promise((resolve, reject) => {
-      onMessage(resolve, reject);
-      this.postData(this.worker, params);
+      this.worker.onmessage = e => {
+        const { chunkHash, error } = e.data;
+        this.status = STATUS.WAITING;
+        if (error) {
+          reject(error);
+        } else {
+          resolve(chunkHash);
+        }
+      }
+      const { data, index } = params;
+      this.worker.postMessage({
+        chunkArrayBuffer: data,
+        index,
+      })
     })
   }
 

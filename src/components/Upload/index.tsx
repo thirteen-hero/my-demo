@@ -4,7 +4,7 @@ import { SlideDown } from 'react-slidedown';
 import SparkMD5 from 'spark-md5';
 import axios from 'axios';
 
-import { limitLoad } from 'src/tools/asyncload';
+import { concurrentLimit } from 'src/tools/asyncload';
 import workerPoolForHash from './workerPoolForHash';
 import styles from './index.module.less';
 interface UploadProps {
@@ -36,6 +36,7 @@ interface IUploadProps {
   fileMd5Value: string;
   chunks: number;
   needUploadNum: number;
+  signal: AbortSignal;
 }
 
 interface SourceInfo {
@@ -137,7 +138,7 @@ const Upload = ({
     return axios.get(url);
   }
 
-  const upload = async({ i, file, fileMd5Value, chunks, needUploadNum }: IUploadProps) => {
+  const upload = async({ i, file, fileMd5Value, chunks, needUploadNum, signal }: IUploadProps) => {
     const end = (i + 1) * chunkSize >= file.size ? file.size : (i + 1) * chunkSize;
     const form = new FormData();
     form.append('data', file.slice(i * chunkSize, end));
@@ -148,6 +149,7 @@ const Upload = ({
       method: 'post',
       url: BaseUrl + "/upload",
       data: form,
+      signal,
     });
     // list是已经上传成功的分片列表 用于计算上传进度条
     const { stat, list } = data;
@@ -155,6 +157,7 @@ const Upload = ({
       const uploadPercent = Math.ceil((list.length / needUploadNum) * 100);
       dispatch({ type: Type.Upload, uploadPercent });
     }
+    return data;
   }
 
   // 上传chunk
@@ -170,7 +173,7 @@ const Upload = ({
         requestList.push({ i, file, fileMd5Value, chunks, needUploadNum});
       }
     }
-    await limitLoad(requestList, maxRequest, upload);
+    await concurrentLimit(requestList, maxRequest, upload);
   }
 
   // 所有分片上传完成 准备合成
@@ -200,20 +203,22 @@ const Upload = ({
     }
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (sourceInfo?.url) {
+        URL.revokeObjectURL(sourceInfo?.url);
+      }
+    };
+  }, [sourceInfo?.url]);
+
   // 用户选择文件发生变化 处理上传逻辑
   const handleFileChange = async(file: File) => {
-    const fileReader = new FileReader();
-    // 文件读取成功回调
-    fileReader.onload = (e) => {
-      // 资源预览
-      setSourceInfo({
-        // @ts-ignore
-        url: e.target.result,
-        type: file.type,
-      });
-    }
-    fileReader.readAsDataURL(file);
-    
+    const objectUrl = URL.createObjectURL(file);
+    setSourceInfo({
+      // @ts-ignore
+      url: objectUrl,
+      type: file.type,
+    });
     try {
       console.time('md5 compute');
       // 获取文件的md5值
@@ -323,7 +328,7 @@ const Upload = ({
   }
 
   // 将分片后的文件转化为arrayBuffer格式
-  // arrayBuffer是可转移对象,在线程之间转移时以快速且高效的零拷贝操作在上下文之间移动,对比Blob格式来讲在事件和空间上都有一定程度优化
+  // arrayBuffer是可转移对象,在线程之间转移时以快速且高效的零拷贝操作在上下文之间移动,对比Blob格式来讲在时间和空间上都有一定程度优化
   const getArrayBufferFromBlobs = async(chunks: Blob[]): Promise<ArrayBuffer[]> =>  {
     return Promise.all(chunks.map(chunk => chunk.arrayBuffer()));
   }
@@ -346,18 +351,20 @@ const Upload = ({
           上传
         </Button>
       </div>
-      {sourceInfo && (
-        sourceInfo.type === 'image/jpeg' ? 
-          <img 
-            className={styles.source} 
-            src={sourceInfo.url} 
-          /> :
-          <
-            video className={styles.source} 
-            src={sourceInfo.url} 
-            controls
-          />
-      )}
+      <div className={styles.sourceInfo}>
+        {sourceInfo ? (
+          sourceInfo.type === 'image/jpeg' ? 
+            <img 
+              className={styles.source} 
+              src={sourceInfo.url} 
+            /> :
+            <video 
+              className={styles.source} 
+              src={sourceInfo.url}
+              controls
+            />
+        ) : <div>资源待加载...</div>}
+      </div>
       {uploadState.checkPercent > 0 ? (
         <SlideDown className={styles.slidedown}>
           <div className={styles.uploading}>
