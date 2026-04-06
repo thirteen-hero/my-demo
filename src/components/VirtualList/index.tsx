@@ -19,7 +19,6 @@ interface IState {
   eachNum: number; // 每次渲染的条数
 }
 
-let eachNum = 0;
 class VirtualList extends Component<IProps, IState> {
   constructor(props: IProps) {
     super(props);
@@ -27,28 +26,32 @@ class VirtualList extends Component<IProps, IState> {
       start: 0,
       eachNum: 0,
     }
-    // 给滚动事件回调函数增加防抖 同时扩大缓冲区
-    this.handleScroll = throttle(this.handleScroll, 100, true, true);
   }
 
   contextRef = createRef<HTMLDivElement>();
   boxRef = createRef<HTMLDivElement>();
+  rafId = null;
 
   handleScroll = () => {
-    if (!this.boxRef.current || !this.contextRef.current) return;
-    const { itemHeight } = this.props;
-    // 容器滚动高度
-    const scrollTop = this.boxRef.current.scrollTop;
-    // 下次开始展示的数据索引
-    // 上方预留了五条缓冲数据
-    const start = Math.max(0, Math.floor(scrollTop / itemHeight) - 5);
-    // 当前的偏离距离
-    // 前五条数据卷上去不做偏离 第四条数据卷上去才开始做偏离 和五条缓冲数据相结合形成了缓冲区
-    const currOffset = start * itemHeight;
-    // 此处使用transform: translate做平移是保证展示的内容展示区域在滚动过程中不断平移,以保证向上或向下都有滚动的空间
-    // 强制启用GPU(硬件)加速
-    this.contextRef.current.style.transform = `translate3d(0, ${currOffset}px, 0)`;
-    this.setState({ start });
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+
+    // @ts-ignore
+    this.rafId = requestAnimationFrame(() => {
+      if (!this.boxRef.current || !this.contextRef.current) return;
+      const { itemHeight } = this.props;
+      // 容器滚动高度
+      const scrollTop = this.boxRef.current.scrollTop;
+      // 下次开始展示的数据索引
+      // 上方预留了五条缓冲数据
+      const start = Math.max(0, Math.floor(scrollTop / itemHeight) - 5);
+      // 当前的偏离距离
+      // 前五条数据卷上去不做偏离 第六条数据卷上去才开始做偏离 和五条缓冲数据相结合形成了缓冲区
+      const currOffset = start * itemHeight;
+      // 此处使用transform: translate做平移是保证展示的内容展示区域在滚动过程中不断平移,以保证向上或向下都有滚动的空间
+      // 强制启用GPU(硬件)加速
+      this.contextRef.current.style.transform = `translate3d(0, ${currOffset}px, 0)`;
+      this.setState({ start });
+    })
   }
 
   componentDidMount() {
@@ -56,12 +59,12 @@ class VirtualList extends Component<IProps, IState> {
     const { itemHeight } = this.props;
     const height = this.boxRef.current.offsetHeight;
     // 每次渲染的项数 = 容器高度 / (每项高度 + 每项margin)
-    eachNum = Math.ceil(height / itemHeight);
-    this.setState({ eachNum });
+    const currEachNum = Math.ceil(height / itemHeight);
+    this.setState({ eachNum: currEachNum });
   }
 
   render () {
-    const { start } = this.state;
+    const { start, eachNum } = this.state;
     const { data, Item } = this.props;
     // 前五条数据往上卷但是未做偏离,因此尾部大于3才能保证页面可继续向下滚动,+6表示尾部存在五条数据的缓冲区
     const renderList = data.slice(start, start + eachNum + 10);
