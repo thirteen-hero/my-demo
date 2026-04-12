@@ -49,7 +49,7 @@ const initialState: UploadState = {
   uploadPercent: 0,
 }
 
-const BaseUrl = 'http://localhost:1111';
+const BaseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:1111';
 
 const reducer = (uploadState: UploadState, action: Action) => {
   switch (action.type) {
@@ -86,48 +86,6 @@ const Upload = ({
   const workerPool = useRef<null | workerPoolForHash>(null);
   // @ts-ignore
   const [uploadState, dispatch] = useReducer(reducer, initialState);
-
-  // 将文件切片并转换成md5
-  // const md5File = (file: File) => {
-  //   return new Promise((resolve, reject) => {
-  //     // 用于文件分片
-  //     const blobSlice = File.prototype.slice;
-  //     // 最终文件的分片数
-  //     const chunks = Math.ceil(file?.size / chunkSize);
-  //     const spark = new SparkMD5.ArrayBuffer();
-  //     // 异步读取用户存储在计算机上的文件
-  //     const fileReader = new FileReader();
-  //     // 文件读取成功回调
-  //     fileReader.onload = (e) => {
-  //       // 将读取到的分片添加进去直到全部读取完毕生成唯一的md5值
-  //       // @ts-ignore
-  //       spark.append(e.target.result);
-  //       checkCurrentChunk += 1;
-  //       if (checkCurrentChunk < chunks) {
-  //         loadNext();
-  //       } else {
-  //         const result = spark.end();
-  //         resolve(result);
-  //       }
-  //     }
-  //     // 文件读取失败回调
-  //     fileReader.onerror = (e) => {
-  //       reject('文件读取错误');
-  //     }
-
-  //     // 进行文件分片
-  //     const loadNext = () => {
-  //       const start = checkCurrentChunk * chunkSize;
-  //       const end = start + chunkSize >= file.size ? file.size : start + chunkSize;
-  //       // 读取文件分片并返回一个包含文件数据的ArrayBuffer对象
-  //       fileReader.readAsArrayBuffer(blobSlice.call(file, start, end));
-  //       // 检查进度条
-  //       dispatch({ type: Type.Check, checkPercent: Math.ceil((checkCurrentChunk + 1)/chunks * 100) });
-  //     }
-
-  //     loadNext();
-  //   })
-  // }
 
   // 通过文件的md5校验文件是否已经存在
   const checkFileIsExistByMd5 = async(
