@@ -7,6 +7,19 @@ import axios from 'axios';
 import { concurrentLimit } from 'src/tools/asyncload';
 import workerPoolForHash from './workerPoolForHash';
 import styles from './index.module.less';
+
+// 常量定义
+const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+const DEFAULT_MAX_CONCURRENT = 5;
+const DEFAULT_MAX_WORKERS = navigator.hardwareConcurrency || 4;
+
+// 媒体类型枚举
+enum MediaType {
+  IMAGE_JPEG = 'image/jpeg',
+  IMAGE_PNG = 'image/png',
+  VIDEO_MP4 = 'video/mp4',
+}
+
 interface UploadProps {
   chunkSize?: number; // 切片大小
   maxRequest?: number; // 单次最大请求数量
@@ -54,38 +67,68 @@ const BaseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:1111';
 const reducer = (uploadState: UploadState, action: Action) => {
   switch (action.type) {
     case Type.Init:
-      uploadState.checkPercent = 0;
-      uploadState.uploadPercent = 0;
-      return { ...uploadState };
+      return { 
+        checkPercent: 0,
+        uploadPercent: 0,
+      };
     case Type.Check:
-      uploadState.checkPercent = action.checkPercent ?? uploadState.checkPercent;
-      return { ...uploadState };
+      return { 
+        ...uploadState,
+        checkPercent: action.checkPercent ?? uploadState.checkPercent,
+      };
     case Type.Upload: 
-      uploadState.uploadPercent = action.uploadPercent ?? uploadState.uploadPercent;
-      return { ... uploadState };
+      return { 
+        ...uploadState,
+        uploadPercent: action.uploadPercent ?? uploadState.uploadPercent,
+      };
     default: 
-      return {
-        checkPercent: uploadState.checkPercent,
-        uploadPercent: uploadState.uploadPercent,
-      }
+      return uploadState;
   }
 }
 
 const Upload = ({ 
-  // 默认切片大小
-  chunkSize = 5 * 1024 *1024, 
-  // 默认单次最大请求数量
-  maxRequest = 5, 
-  // 默认最大并发线程数量
-  maxWorkers = navigator.hardwareConcurrency,
+  chunkSize = DEFAULT_CHUNK_SIZE,
+  maxRequest = DEFAULT_MAX_CONCURRENT,
+  maxWorkers = DEFAULT_MAX_WORKERS,
 }: UploadProps) => {
   const [sourceInfo, setSourceInfo] = useState<SourceInfo | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   // 存储input标签实例
-  const inputRef = useRef(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   // 保存workerPool的实例
   const workerPool = useRef<null | workerPoolForHash>(null);
   // @ts-ignore
   const [uploadState, dispatch] = useReducer(reducer, initialState);
+
+  // 网络状态监测
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      message.success('网络已连接');
+    };
+    
+    const handleOffline = () => {
+      setIsOnline(false);
+      message.warning('网络已断开，上传已暂停');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // 清理 object URL
+  useEffect(() => {
+    return () => {
+      if (sourceInfo?.url) {
+        URL.revokeObjectURL(sourceInfo.url);
+      }
+    }
+  }, []);
 
   // 通过文件的md5校验文件是否已经存在
   const checkFileIsExistByMd5 = async(
@@ -146,58 +189,43 @@ const Upload = ({
     }
   }
 
-  // 绑定change事件 监听上传文件变化
-  useEffect(() => {
-    const fileChange = ({ target }: any) => {
-      dispatch({ type: Type.Init });
-      // 获取<input type='file' />标签选择的文件列表
-      // target.files就是一个FileList对象
-      const file = target.files[0];
-      handleFileChange(file);
-    }
-    document.addEventListener('change', fileChange);
-    return () => {
-      document.removeEventListener('change', fileChange);
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (sourceInfo?.url) {
-        URL.revokeObjectURL(sourceInfo?.url);
-      }
-    };
-  }, [sourceInfo?.url]);
-
-  // 用户选择文件发生变化 处理上传逻辑
+  // 处理文件选择
   const handleFileChange = async(file: File) => {
-    const objectUrl = URL.createObjectURL(file);
+    if (!file) return;
+    
+    // 先清理旧的 URL，避免内存泄漏
+    if (sourceInfo?.url) {
+      URL.revokeObjectURL(sourceInfo.url);
+    }
+    
+    // 立即创建本地预览，不依赖服务器响应
+    const url = URL.createObjectURL(file);
     setSourceInfo({
-      // @ts-ignore
-      url: objectUrl,
+      url,
       type: file.type,
     });
+    
+    // 检查网络状态
+    if (!isOnline) {
+      message.error('网络未连接，无法上传文件');
+      return;
+    }
+    
+    dispatch({ type: Type.Init });
+    console.time('md5 compute');
     try {
-      console.time('md5 compute');
-      // 获取文件的md5值
-      // const fileMd5Value = await md5File(file);
-      // 文件分片
-      const chunksBlob = sliceChunks(file);
-      // 将文件分片进行分组
-      const chunkParts = handleChunkParts(chunksBlob, maxWorkers);
-      // 计算文件唯一的md5值
-      const fileMd5Value = await getChunksHash(
-        chunkParts, 
-        chunksBlob.length
-      );
+      // 切片 并将分片分组
+      const chunks = sliceChunks(file);
+      const arrParts = handleChunkParts(chunks, maxWorkers);
+      // 计算hash
+      const fileMd5Value = await getChunksHash(arrParts, chunks.length);
       if (!fileMd5Value) {
-        message.error('未计算出文件md5值,请重试');
+        message.error('文件计算md5失败');
         return;
       }
-      // 校验文件的md5
-      // @ts-ignore
+      // 通过文件的md5校验文件是否已经存在
       const { data } = await checkFileIsExistByMd5(file.name, fileMd5Value);
-      // 如果文件已存在 就秒传
+      // 秒传
       if (data?.file) {
         message.success('文件已秒传');
         return;
@@ -208,8 +236,8 @@ const Upload = ({
       // 通知服务器所有分片已上传完成
       await notifyServer(file, fileMd5Value);
     } catch (error) {
-      // @ts-ignore
-      message.error(error?.message);
+      const msg = error instanceof Error ? error.message : '上传失败';
+      message.error(msg);
     }
   }
 
@@ -217,7 +245,7 @@ const Upload = ({
   const sliceChunks = (file: File) => {
     const chunks: Blob[] = [];
     const blobSlice = File.prototype.slice;
-    let start = 0 * chunkSize;
+    let start = 0;
     while (start < file.size) {
       chunks.push(blobSlice.call(file, start, start + chunkSize));
       start += chunkSize;
@@ -291,6 +319,11 @@ const Upload = ({
     return Promise.all(chunks.map(chunk => chunk.arrayBuffer()));
   }
 
+  // 判断是否为图片类型
+  const isImageType = (type: string) => {
+    return type === MediaType.IMAGE_JPEG || type === MediaType.IMAGE_PNG;
+  }
+
   return (
     <div className={styles.wrapper}>
       <div className={styles.upload}>
@@ -299,22 +332,29 @@ const Upload = ({
           ref={inputRef} 
           type='file' 
           id='file' 
-          style={{ display: 'none' }} 
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              handleFileChange(file);
+            }
+          }}
         />
         <Button 
           type='primary' 
-          // @ts-ignore
           onClick={() => inputRef.current?.click()}
+          disabled={!isOnline}
         >
-          上传
+          {isOnline ? '上传' : '网络未连接'}
         </Button>
       </div>
       <div className={styles.sourceInfo}>
         {sourceInfo ? (
-          sourceInfo.type === 'image/jpeg' ? 
+          isImageType(sourceInfo.type) ? 
             <img 
               className={styles.source} 
-              src={sourceInfo.url} 
+              src={sourceInfo.url}
+              alt="uploaded" 
             /> :
             <video 
               className={styles.source} 
@@ -328,7 +368,7 @@ const Upload = ({
           <div className={styles.uploading}>
             <div>
               校验文件进度：
-              < Progress 
+              <Progress 
                 style={{width: 200}} 
                 percent={uploadState.checkPercent} 
               />
@@ -341,7 +381,7 @@ const Upload = ({
           <div className={styles.uploading}>
             <div>
               上传文件进度：
-              < Progress 
+              <Progress 
                 style={{ width: 200 }}
                 percent={uploadState.uploadPercent} 
               />
